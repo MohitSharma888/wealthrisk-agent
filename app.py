@@ -1,4 +1,13 @@
 import streamlit as st
+import os
+
+# Load API key FIRST before any agent imports
+try:
+    os.environ["ANTHROPIC_API_KEY"] = st.secrets["ANTHROPIC_API_KEY"]
+except Exception:
+    from dotenv import load_dotenv
+    load_dotenv()
+
 import json
 import plotly.express as px
 import pandas as pd
