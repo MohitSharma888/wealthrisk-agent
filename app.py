@@ -25,9 +25,11 @@ col1, col2 = st.columns(2)
 with col1:
     st.subheader("📋 Client Profile")
     name = st.selectbox("Select Demo Client", [
-        "Sarah Mitchell (Clean Pass)",
-        "James Thornton (Compliance Fail)",
-        "Viktor Petrov (AML Flag)"
+    "Sarah Mitchell (Clean Pass)",
+    "James Thornton (Compliance Fail)",
+    "Viktor Petrov (AML Flag)",
+    "Priya Sharma (ESG Focus)",
+    "David Chen (Stress Test Breach)"
     ])
 
     if "Sarah" in name:
@@ -38,6 +40,15 @@ with col1:
         default_age, default_income, default_assets = 68, 45000, 380000
         default_risk, default_strategy, default_horizon = "conservative", "aggressive", 5
         default_esg, default_drawdown = False, -10
+    elif "Priya" in name:
+        default_age, default_income, default_assets = 38, 120000, 800000
+        default_risk, default_strategy, default_horizon = "growth", "growth", 20
+        default_esg, default_drawdown = True, -12
+
+    elif "David" in name:
+        default_age, default_income, default_assets = 61, 95000, 450000
+        default_risk, default_strategy, default_horizon = "conservative", "conservative", 8
+        default_esg, default_drawdown = False, -5
     else:
         default_age, default_income, default_assets = 45, 220000, 5000000
         default_risk, default_strategy, default_horizon = "growth", "growth", 10
