@@ -4,8 +4,9 @@
 
 from anthropic import Anthropic
 import json
+import os
 
-client = Anthropic()
+client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
 # ── Counterparty database ─────────────────────────────────────
 COUNTERPARTY_DB = {
