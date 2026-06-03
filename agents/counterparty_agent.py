@@ -1,14 +1,9 @@
-# agents/counterparty_agent.py
-# WealthRisk Agent — Counterparty Credit Risk
-# Inserts between aml_check and suitability in orchestrator.py
-
 from anthropic import Anthropic
 import json
 import os
 
 client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
-# ── Counterparty database ─────────────────────────────────────
 COUNTERPARTY_DB = {
     "JPMorgan Chase": {"rating": "A+",   "cds_bps": 42,   "type": "prime_broker"},
     "UBS":            {"rating": "A",    "cds_bps": 58,   "type": "prime_broker"},
@@ -27,22 +22,17 @@ RATING_PD = {
     "BB":  0.0800, "B":   0.2500, "D":   1.0000,
 }
 
-CONCENTRATION_LIMIT = 25.0   # % max per counterparty
-CDS_ALERT_BPS       = 100    # flag if spread exceeds
-RATING_FLOOR_PD     = 0.0200 # BBB- minimum
+CONCENTRATION_LIMIT = 25.0
+CDS_ALERT_BPS       = 100
+RATING_FLOOR_PD     = 0.0200
 
 def run_counterparty_check(state: dict) -> dict:
-    """
-    Counterparty credit risk agent.
-    Takes state dict, mutates it, returns it — matches your existing agent pattern.
-    """
     profile    = state["client_profile"]
     assets     = profile.get("investable_assets", 0)
     brokers    = profile.get("brokers", ["JPMorgan Chase"])
     custodians = profile.get("custodians", ["HSBC"])
     extra_cps  = profile.get("extra_counterparties", {})
 
-    # Build exposure map
     cp_exposure = {}
     broker_share = assets / len(brokers) if brokers else 0
     cust_share   = assets / len(custodians) if custodians else 0
@@ -83,43 +73,40 @@ def run_counterparty_check(state: dict) -> dict:
             alerts.append(f"CDS ALERT: {cp_name} spread {cds}bps")
 
         results[cp_name] = {
-            "exposure":       round(exposure, 2),
-            "concentration":  conc,
-            "rating":         rating,
-            "pd_pct":         round(pd * 100, 4),
-            "cva":            round(cva, 2),
-            "cds_bps":        cds,
-            "status":         status,
-            "alerts":         cp_alerts,
+            "exposure":      round(exposure, 2),
+            "concentration": conc,
+            "rating":        rating,
+            "pd_pct":        round(pd * 100, 4),
+            "cva":           round(cva, 2),
+            "cds_bps":       cds,
+            "status":        status,
+            "alerts":        cp_alerts,
         }
 
-    # Claude narrative
     narrative_prompt = f"""
 You are a senior credit risk officer. Write 2 sentences summarising
 the counterparty risk for {profile['name']}.
 Results: {json.dumps(results, indent=2)}
 Alerts: {alerts}
-Total CVA: £{total_cva:,.2f}
+Total CVA: {total_cva:,.2f}
 Be direct. Mention specific counterparty names. No bullet points.
 """
     narrative = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         max_tokens=200,
         messages=[{"role": "user", "content": narrative_prompt}]
     ).content[0].text
 
-    cp_result = {
+    state["counterparty_result"] = {
         "cleared":        cleared,
         "counterparties": results,
         "alerts":         alerts,
         "total_cva":      round(total_cva, 2),
         "narrative":      narrative,
     }
-
-    state["counterparty_result"] = cp_result
     state["audit_trail"].append({
         "agent":  "counterparty_check",
         "result": "CLEARED" if cleared else "FLAGGED",
-        "detail": f"{len(alerts)} alerts | CVA £{total_cva:,.2f}",
+        "detail": f"{len(alerts)} alerts | CVA {total_cva:,.2f}",
     })
     return state
