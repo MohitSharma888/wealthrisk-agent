@@ -20,16 +20,41 @@ st.title("💼 WealthRisk AI Agent")
 st.markdown("*Multi-agent AI system for FCA-compliant wealth management · Built by Mohit Sharma*")
 st.markdown("---")
 
+# ── Counterparty lookup maps ───────────────────────────────────────────────────
+broker_map = {
+    "Sarah Mitchell": ["JPMorgan Chase"],
+    "James Thornton": ["JPMorgan Chase"],
+    "Viktor Petrov":  ["UBS"],
+    "Priya Sharma":   ["JPMorgan Chase"],
+    "David Chen":     ["JPMorgan Chase"],
+    "Marcus Webb":    ["Barclays", "Barclays", "Barclays"],  # 60% concentration → HALT
+    "Helena Zhao":    ["JPMorgan Chase", "UBS"],
+}
+custodian_map = {
+    "Sarah Mitchell": ["DBS Bank"],
+    "James Thornton": ["HSBC"],
+    "Viktor Petrov":  ["HSBC"],
+    "Priya Sharma":   ["HSBC"],
+    "David Chen":     ["DBS Bank"],
+    "Marcus Webb":    ["Barclays"],   # all with Barclays → triggers limit
+    "Helena Zhao":    ["HSBC"],
+}
+extra_cp_map = {
+    "Helena Zhao": {"Lehman Legacy": 350000},   # D-rated → immediate HALT
+}
+
 col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("📋 Client Profile")
     name = st.selectbox("Select Demo Client", [
-    "Sarah Mitchell (Clean Pass)",
-    "James Thornton (Compliance Fail)",
-    "Viktor Petrov (AML Flag)",
-    "Priya Sharma (ESG Focus)",
-    "David Chen (Stress Test Breach)"
+        "Sarah Mitchell (Clean Pass)",
+        "James Thornton (Compliance Fail)",
+        "Viktor Petrov (AML Flag)",
+        "Priya Sharma (ESG Focus)",
+        "David Chen (Stress Test Breach)",
+        "Marcus Webb (Counterparty Concentration)",
+        "Helena Zhao (Sub-Investment-Grade CP)",
     ])
 
     if "Sarah" in name:
@@ -44,11 +69,18 @@ with col1:
         default_age, default_income, default_assets = 38, 120000, 800000
         default_risk, default_strategy, default_horizon = "growth", "growth", 20
         default_esg, default_drawdown = True, -12
-
     elif "David" in name:
         default_age, default_income, default_assets = 61, 95000, 450000
         default_risk, default_strategy, default_horizon = "conservative", "conservative", 8
         default_esg, default_drawdown = False, -5
+    elif "Marcus" in name:
+        default_age, default_income, default_assets = 52, 380000, 2000000
+        default_risk, default_strategy, default_horizon = "balanced", "balanced", 8
+        default_esg, default_drawdown = False, -15
+    elif "Helena" in name:
+        default_age, default_income, default_assets = 38, 620000, 3500000
+        default_risk, default_strategy, default_horizon = "growth", "growth", 15
+        default_esg, default_drawdown = True, -20
     else:
         default_age, default_income, default_assets = 45, 220000, 5000000
         default_risk, default_strategy, default_horizon = "growth", "growth", 10
@@ -77,36 +109,48 @@ st.markdown("---")
 
 if st.button("⚡ Run WealthRisk Analysis", type="primary", use_container_width=True):
     client_profile = {
-        "name": client_name,
-        "age": age,
-        "annual_income": annual_income,
-        "investable_assets": investable_assets,
-        "risk_tolerance": risk_tolerance,
-        "proposed_strategy": proposed_strategy,
-        "investment_horizon": investment_horizon,
-        "esg_required": esg_required,
-        "max_drawdown_tolerance": max_drawdown,
-        "scenario": scenario_key
+        "name":                  client_name,
+        "age":                   age,
+        "annual_income":         annual_income,
+        "investable_assets":     investable_assets,
+        "risk_tolerance":        risk_tolerance,
+        "proposed_strategy":     proposed_strategy,
+        "investment_horizon":    investment_horizon,
+        "esg_required":          esg_required,
+        "max_drawdown_tolerance":max_drawdown,
+        "scenario":              scenario_key,
+        # ── Counterparty fields ──────────────────────────────
+        "brokers":               broker_map.get(client_name, ["JPMorgan Chase"]),
+        "custodians":            custodian_map.get(client_name, ["HSBC"]),
+        "extra_counterparties":  extra_cp_map.get(client_name, {}),
     }
 
     initial_state = {
-        "client_profile": client_profile,
-        "aml_result": None,
+        "client_profile":     client_profile,
+        "aml_result":         None,
+        "counterparty_result":None,       # ← NEW
         "suitability_result": None,
-        "portfolio_allocation": None,
+        "portfolio_allocation":None,
         "stress_test_result": None,
-        "final_report": None,
-        "audit_trail": [],
-        "error": None
+        "final_report":       None,
+        "audit_trail":        [],
+        "error":              None
     }
 
-    with st.spinner("Running 5-agent analysis pipeline... (~20 seconds)"):
+    with st.spinner("Running 6-agent analysis pipeline... (~25 seconds)"):
         result = graph.invoke(initial_state)
 
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "🔍 AML Check", "✅ Suitability", "📊 Portfolio", "🌍 Stress Test", "📄 Report", "🔗 Audit Trail"
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+        "🔍 AML Check",
+        "🏦 Counterparty Risk",
+        "✅ Suitability",
+        "📊 Portfolio",
+        "🌍 Stress Test",
+        "📄 Report",
+        "🔗 Audit Trail"
     ])
 
+    # ── TAB 1: AML ────────────────────────────────────────────────────────────
     with tab1:
         st.subheader("AML & Sanctions Check")
         aml = result["aml_result"]
@@ -118,28 +162,84 @@ if st.button("⚡ Run WealthRisk Analysis", type="primary", use_container_width=
             st.warning(aml["flag"])
             st.error(aml["action"])
 
+    # ── TAB 2: COUNTERPARTY (NEW) ─────────────────────────────────────────────
     with tab2:
+        st.subheader("🏦 Counterparty Credit Risk")
+        cp = result.get("counterparty_result")
+
+        if cp is None:
+            st.warning("⚠️ Counterparty check not reached — pipeline halted at AML")
+        else:
+            # Status banner
+            if cp["cleared"]:
+                st.success("✅ All counterparty exposures within acceptable limits")
+            else:
+                st.error("🛑 COUNTERPARTY HALT — Critical exposure detected. Pipeline stopped.")
+                for alert in cp["alerts"]:
+                    st.warning(alert)
+
+            # Metrics row
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Total CVA", f"£{cp['total_cva']:,.0f}")
+            m2.metric("Counterparties assessed", len(cp["counterparties"]))
+            m3.metric("Status", "CLEARED" if cp["cleared"] else "HALTED")
+
+            # Counterparty table
+            rows = []
+            for cp_name, data in cp["counterparties"].items():
+                rows.append({
+                    "Counterparty":  cp_name,
+                    "Rating":        data["rating"],
+                    "Exposure £":    f"£{data['exposure']:,.0f}",
+                    "Concentration": f"{data['concentration']}%",
+                    "CVA £":         f"£{data['cva']:,.0f}",
+                    "CDS (bps)":     data["cds_bps"],
+                    "Status":        data["status"],
+                })
+            st.dataframe(
+                pd.DataFrame(rows),
+                use_container_width=True,
+                hide_index=True
+            )
+
+            # Claude narrative
+            st.markdown("**Risk narrative:**")
+            st.info(cp["narrative"])
+
+            # Methodology note
+            st.caption(
+                "CVA = Exposure × PD × LGD(45%) · "
+                "Concentration limit: 25% per counterparty · "
+                "CDS alert: 100bps · Rating floor: BBB-"
+            )
+
+    # ── TAB 3: SUITABILITY ────────────────────────────────────────────────────
+    with tab3:
         st.subheader("FCA Suitability Assessment")
         suit = result["suitability_result"]
-        if suit["verdict"] == "SUITABLE":
-            st.success(f"✅ VERDICT: {suit['verdict']}")
+        if suit is None:
+            st.warning("⚠️ Suitability check not reached — pipeline halted earlier")
         else:
-            st.error(f"❌ VERDICT: {suit['verdict']}")
+            if suit["verdict"] == "SUITABLE":
+                st.success(f"✅ VERDICT: {suit['verdict']}")
+            else:
+                st.error(f"❌ VERDICT: {suit['verdict']}")
 
-        st.markdown("**FCA Rules Checked:**")
-        for check in suit["checks"]:
-            icon = "✅" if check["pass"] else "❌"
-            status = "PASS" if check["pass"] else "FAIL"
-            st.markdown(f"{icon} **{check['rule']}** — {check['description']} · *{check['detail']}* · **{status}**")
+            st.markdown("**FCA Rules Checked:**")
+            for check in suit["checks"]:
+                icon = "✅" if check["pass"] else "❌"
+                status = "PASS" if check["pass"] else "FAIL"
+                st.markdown(f"{icon} **{check['rule']}** — {check['description']} · *{check['detail']}* · **{status}**")
 
-        st.markdown("**Suitability Explanation:**")
-        st.write(suit["explanation"])
+            st.markdown("**Suitability Explanation:**")
+            st.write(suit["explanation"])
 
-    with tab3:
+    # ── TAB 4: PORTFOLIO ──────────────────────────────────────────────────────
+    with tab4:
         st.subheader("Portfolio Allocation")
         port = result["portfolio_allocation"]
-        if port.get("status") == "SKIPPED":
-            st.warning("⚠️ Portfolio not generated — suitability check failed")
+        if port is None or port.get("status") == "SKIPPED":
+            st.warning("⚠️ Portfolio not generated — pipeline halted earlier")
         else:
             allocs = port["allocations"]
             df = pd.DataFrame({
@@ -147,17 +247,18 @@ if st.button("⚡ Run WealthRisk Analysis", type="primary", use_container_width=
                 "Allocation %": list(allocs.values())
             })
             fig = px.pie(df, values="Allocation %", names="Asset Class",
-                        title="Portfolio Allocation",
-                        color_discrete_sequence=px.colors.qualitative.Set3)
+                         title="Portfolio Allocation",
+                         color_discrete_sequence=px.colors.qualitative.Set3)
             st.plotly_chart(fig, use_container_width=True)
             st.markdown(f"**Rationale:** {port['rationale']}")
             if port["esg_applied"]:
                 st.info("🌿 ESG screening applied — fossil fuels excluded")
 
-    with tab4:
+    # ── TAB 5: STRESS TEST ────────────────────────────────────────────────────
+    with tab5:
         st.subheader("Geopolitical Stress Test")
         stress = result["stress_test_result"]
-        if stress.get("status") == "SKIPPED":
+        if stress is None or stress.get("status") == "SKIPPED":
             st.warning("⚠️ Stress test skipped — no portfolio to test")
         else:
             st.markdown(f"**Scenario:** {stress['scenario']}")
@@ -177,13 +278,14 @@ if st.button("⚡ Run WealthRisk Analysis", type="primary", use_container_width=
             } for k, v in impacts.items()])
 
             fig2 = px.bar(df2, x="Asset", y="Scenario Impact %",
-                         title=f"Asset Impact — {stress['scenario']}",
-                         color="Scenario Impact %",
-                         color_continuous_scale=["red", "yellow", "green"])
+                          title=f"Asset Impact — {stress['scenario']}",
+                          color="Scenario Impact %",
+                          color_continuous_scale=["red", "yellow", "green"])
             st.plotly_chart(fig2, use_container_width=True)
             st.dataframe(df2, use_container_width=True)
 
-    with tab5:
+    # ── TAB 6: REPORT ─────────────────────────────────────────────────────────
+    with tab6:
         st.subheader("Compliance Report")
         st.markdown(result["final_report"])
         st.download_button(
@@ -193,7 +295,8 @@ if st.button("⚡ Run WealthRisk Analysis", type="primary", use_container_width=
             mime="text/plain"
         )
 
-    with tab6:
+    # ── TAB 7: AUDIT TRAIL ────────────────────────────────────────────────────
+    with tab7:
         st.subheader("Audit Trail")
         st.markdown("*Every agent decision logged with timestamp for regulatory review*")
         for i, entry in enumerate(result["audit_trail"], 1):
